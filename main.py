@@ -339,6 +339,9 @@ def main():
         sys.exit(1)
 
     db = createdb()
+    if not db:
+        print("Error while creating database", file=sys.stderr)
+        sys.exit(1)
 
     with open(urlFile) as f:
         filedata = f.read()
@@ -351,17 +354,32 @@ def main():
                 incidents = extractincidents(urlIncidentData)
                 print("Incidents Extracted")
                 db = populatedb(db, incidents)
+                if not db:
+                    print("Error while populating database", file=sys.stderr)
+                    sys.exit(1)
     
     db = updateranks(db)
+    if not db:
+        print("Error while updating ranks", file=sys.stderr)
+        sys.exit(1)
 
     db = get_location(db)
+    if not db:
+        print("Error while getting location", file=sys.stderr)
+        sys.exit(1)
 
     print(f"\nError while fetching latitude, longitude for {loc_errors} locations.")
     print(f"\nCache hits: {cache_hits}\n")
 
     db = get_weather(db)
+    if not db:
+        print("Error while getting weather", file=sys.stderr)
+        sys.exit(1)
 
     db = side_of_town(db)
+    if not db:
+        print("Error while getting side of town", file=sys.stderr)
+        sys.exit(1)
 
     output(db)
 
