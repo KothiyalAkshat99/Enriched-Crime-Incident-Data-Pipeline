@@ -88,7 +88,7 @@ Tests cover fetch, extract, DB create/populate, rank updates, geocoding, weather
 
 ## Configuration and environment
 
-- **Database path:** Hardcoded as `resources/normanpd.db`. Can be moved to config/env later (see PLANNER).
+- **Database path:** `resources/normanpd.db`.
 - **Town center** (for “side of town”): Norman, OK `(35.2226, -97.4395)`.
 - **Geocoding:** Nominatim (no API key). Optional `.env` can be used for future OpenCage or other keys.
 
