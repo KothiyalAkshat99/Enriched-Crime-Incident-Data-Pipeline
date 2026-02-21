@@ -6,25 +6,92 @@ from urllib.request import urlopen
 import io
 import sqlite3
 from datetime import datetime
-from geopy.geocoders import Nominatim # ignore: import-error
-from geopy.adapters import AioHTTPAdapter # ignore: import-error
+from geopy.geocoders import Nominatim 
+from geopy.adapters import AioHTTPAdapter 
 import asyncio
-import aiohttp # ignore: import-error
-from geopy.extra.rate_limiter import RateLimiter, AsyncRateLimiter # ignore: import-error
-from opencage.geocoder import OpenCageGeocode # ignore: import-error
+import aiohttp 
+from geopy.extra.rate_limiter import RateLimiter, AsyncRateLimiter 
+from opencage.geocoder import OpenCageGeocode 
 import pandas as pd
 import requests
-import openmeteo_requests # ignore: import-error
-import requests_cache # ignore: import-error
-from retry_requests import retry # ignore: import-error
+import openmeteo_requests 
+import requests_cache 
+from retry_requests import retry 
 from math import radians, cos, sin, asin, sqrt, atan2, degrees
+import logging
+from logging.handlers import RotatingFileHandler
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, urlparse
+import re
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+handler = logging.FileHandler('app.log')
+handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+def setup_logging():
+    """Configure logging for the pipeline: file + console, level from env."""
+    log_level = getattr(logging, os.environ.get("LOG_LEVEL", "INFO").upper(), logging.INFO)
+    log_file = os.environ.get("LOG_FILE", "app.log")
+
+    logger = logging.getLogger(__name__)
+    logger.setLevel(log_level)
+    # Avoid duplicate handlers when main is re-run (e.g. in tests)
+    if logger.handlers:
+        return
+
+    formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+    # File: append, one log file for the pipeline
+    fh = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5)
+    fh.setLevel(log_level)
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+
+
+def scrape_normanpd_pdf_urls():
+    url = "https://www.normanok.gov/public-safety/police-department/crime-prevention-data/department-activity-reports"
+    
+    response = requests.get(url)
+    incident_pdf_urls = set()
+    case_pdf_urls = set()
+    arrest_pdf_urls = set()
+    
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.text, 'html.parser')
+        base_url = "https://www.normanok.gov"
+        
+        daily_incident_pattern = r'/sites/default/files/documents/\d{4}-\d{2}/\d{4}-\d{2}-\d{2}_daily_incident_summary.pdf'
+        daily_case_pattern = r'/sites/default/files/documents/\d{4}-\d{2}/\d{4}-\d{2}-\d{2}_daily_case_summary.pdf'
+        daily_arrest_pattern = r'/sites/default/files/documents/\d{4}-\d{2}/\d{4}-\d{2}-\d{2}_daily_arrest_summary.pdf'
+        
+        for link in soup.find_all('a', href=True):
+            href = link.get('href', '').strip()
+            if re.search(daily_incident_pattern, href):
+                incident_pdf_urls.add(urljoin(base_url, href))
+            if re.search(daily_case_pattern, href):
+                case_pdf_urls.add(urljoin(base_url, href))
+            if re.search(daily_arrest_pattern, href):
+                arrest_pdf_urls.add(urljoin(base_url, href))
+
+    logger.info(f"Found {len(incident_pdf_urls)} incident PDF URLs")
+    logger.info(f"Found {len(case_pdf_urls)} case PDF URLs")
+    logger.info(f"Found {len(arrest_pdf_urls)} arrest PDF URLs")
+    
+    return list(incident_pdf_urls), list(case_pdf_urls), list(arrest_pdf_urls)
 
 
 def get_day_of_week(date_string):
 
     # Convert the date string to a datetime object
     date_obj = datetime.strptime(date_string, '%m/%d/%Y')
-    #print(date_obj)
     
     # Get the day of the week (0 = Monday, 1 = Tuesday, ..., 6 = Sunday)
     day_of_week = date_obj.weekday()
@@ -36,7 +103,7 @@ def get_day_of_week(date_string):
 
 
 geocode_cache = {}
-geolocator = Nominatim(user_agent="cis6930sp24assignment2")
+geolocator = Nominatim(user_agent="NormanPDIncidentDataPipeline")
 #geocode = RateLimiter(geolocator.geocode, min_delay_seconds=1)
 
 loc_errors = 0
@@ -49,6 +116,7 @@ def cached_geocode(address, db):
     result = con.execute(f"SELECT loc, latitude, longitude FROM location WHERE loc = ?", (address,)).fetchone()
 
     if result:
+        logger.info(f"Cache hit for {address}")
         cache_hits += 1
         return (result[1], result[2])
     else:
@@ -56,9 +124,10 @@ def cached_geocode(address, db):
             loc = geolocator.geocode(address)
             #geores = RateLimiter(geolocator.geocode(address), min_delay_seconds=1)
         except Exception as e:
-            #print(f'\nAddress \'{address}\' threw an exception. Latitude/Longitude could not be fetched.')
             loc_errors += 1
+            logger.exception(f"Error in geocoding {address}: {e}")
             return (None, None)
+        
         if loc:
             latitude = loc.latitude
             longitude = loc.longitude
@@ -69,9 +138,9 @@ def cached_geocode(address, db):
             return (None, None)
 
 
-def get_location(db):
+def get_location(db: sqlite3.Connection) -> sqlite3.Connection:
 
-    print("\nFetching latitude and longitude for locations")
+    logger.info("\nFetching latitude and longitude for locations")
     cur = db.cursor()
 
     # Pulling location from DB
@@ -87,8 +156,8 @@ def get_location(db):
 
         df[['latitude', 'longitude']] = pd.DataFrame(df['point'].to_list(), index=df.index)
     except:
-        #print("Error in geocoding")
-        pass
+        logger.exception("Error in geocoding")
+        raise Exception("Error in geocoding")
     
     return db
 
@@ -99,7 +168,7 @@ retry_session = retry(cache_session, retries = 5, backoff_factor = 0.2)
 openmeteo = openmeteo_requests.Client(session = retry_session)
 
 
-def get_weather(db):
+def get_weather(db: sqlite3.Connection) -> sqlite3.Connection:
     url = "https://archive-api.open-meteo.com/v1/archive"
     cur = db.cursor()
     locations = cur.execute("SELECT DISTINCT datetime, loc, latitude, longitude FROM incidents JOIN location ON incidents.location = location.loc").fetchall()
@@ -132,12 +201,13 @@ def get_weather(db):
                     db.commit()
 
         except Exception as e:
-            print(f"Error fetching weather data for {loc} on {date} at hour {hour}: {e}")
+            logger.exception(f"Error fetching weather data for {loc} on {date} at hour {hour}: {e}")
+            raise Exception(f"Error fetching weather data for {loc} on {date} at hour {hour}: {e}")
 
     return db
 
 
-def side_of_town(db):
+def side_of_town(db: sqlite3.Connection) -> sqlite3.Connection:
     #Calculate the bearing between two points
     town_center = (35.2226, -97.4395)
 
@@ -169,17 +239,22 @@ def side_of_town(db):
     return db
 
 
-def fetchincidents(url):
+def fetchincidents(url: str) -> io.BytesIO:
     #headers = {}
     #headers['User-Agent'] = "Mozilla/5.0 (X11; Linux i686) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.27 Safari/537.17"
 
-    response = urlopen(url).read()
+    try:
+        response = urlopen(url).read()
+    except Exception as e:
+        logger.exception(f"Error fetching incidents from {url}: {e}")
+        raise Exception(f"Error fetching incidents from {url}: {e}")
+
     response = io.BytesIO(response) # In-Memory Binary Stream, can be read like a file
 
     return response
 
 
-def extractincidents(incident_data):
+def extractincidents(incident_data: io.BytesIO) -> list[list[list[str]]]:
 
     doc = fitz.open(stream = incident_data, filetype="pdf") # Using PyMuPDF/ Fitz module for PDF data extraction
 
@@ -227,7 +302,7 @@ def extractincidents(incident_data):
     return incidents
 
 
-def createdb():
+def createdb() -> sqlite3.Connection:
     os.makedirs("resources", exist_ok=True)
     try:
         con = sqlite3.connect("resources/normanpd.db") # Creating Database connection
@@ -241,12 +316,12 @@ def createdb():
         cur.execute("CREATE TABLE IF NOT EXISTS location (loc TEXT, latitude FLOAT, longitude FLOAT, weather int);")
         return con
     except Exception as e:
-        print(f"Error creating database: {e}")
-        return None
+        logger.exception(f"Error creating database: {e}")
+        raise Exception(f"Error creating database: {e}")
 
 pdfnum = 1
 
-def populatedb(db, incidents):
+def populatedb(db: sqlite3.Connection, incidents: list[list[list[str]]]) -> sqlite3.Connection:
     try:
         cur = db.cursor()
 
@@ -291,11 +366,11 @@ def populatedb(db, incidents):
 
         return db
     except Exception as e:
-        print(f"Error populating database: {e}")
-        return None
+        logger.exception(f"Error populating database: {e}")
+        raise Exception(f"Error populating database: {e}")
 
 
-def updateranks(db):
+def updateranks(db: sqlite3.Connection) -> sqlite3.Connection:
     
     cur = db.cursor()
 
@@ -309,7 +384,9 @@ def updateranks(db):
     return db
 
 
-def output(db):
+def output(db: sqlite3.Connection) -> None:
+
+    logger.info("Outputting database")
 
     cur = db.cursor()
     
@@ -324,61 +401,52 @@ def output(db):
 
 
 def main():
-    try:
-        # Argument Parser
-        parser = argparse.ArgumentParser(description="Data Augmentation")
+    setup_logging()
+    logger = logging.getLogger(__name__) # Get the logger for the current module
 
-        # Arguments
-        parser.add_argument('--urls', required=True, help='files.csv')
-
-        args = parser.parse_args()
-
-        urlFile = args.urls
-    except:
-        print("Error while parsing arguments", file=sys.stderr)
-        sys.exit(1)
+    incident_pdf_urls, case_pdf_urls, arrest_pdf_urls = scrape_normanpd_pdf_urls()
 
     db = createdb()
     if not db:
-        print("Error while creating database", file=sys.stderr)
+        logger.exception("Error while creating database")
         sys.exit(1)
 
-    with open(urlFile) as f:
-        filedata = f.read()
-        for i in filedata.splitlines():
-            url = i.strip()
-            if url:
-                print("\nFetching URL: " + url)
-                urlIncidentData = fetchincidents(url)
-                print("Data Fetched")
-                incidents = extractincidents(urlIncidentData)
-                print("Incidents Extracted")
-                db = populatedb(db, incidents)
-                if not db:
-                    print("Error while populating database", file=sys.stderr)
-                    sys.exit(1)
+    for url in incident_pdf_urls:
+        urlIncidentData = fetchincidents(url)
+        if not urlIncidentData:
+            logger.exception(f"Error while fetching incidents from {url}")
+            sys.exit(1)
+        incidents = extractincidents(urlIncidentData)
+        if not incidents:
+            logger.exception(f"Error while extracting incidents from {url}")
+            sys.exit(1)
+        db = populatedb(db, incidents)
+        if not db:
+            logger.exception("Error while populating database")
+            sys.exit(1)
     
     db = updateranks(db)
     if not db:
-        print("Error while updating ranks", file=sys.stderr)
+        logger.exception("Error while updating ranks")
         sys.exit(1)
 
     db = get_location(db)
     if not db:
-        print("Error while getting location", file=sys.stderr)
+        logger.exception("Error while getting location")
         sys.exit(1)
 
-    print(f"\nError while fetching latitude, longitude for {loc_errors} locations.")
-    print(f"\nCache hits: {cache_hits}\n")
+    if loc_errors:
+        logger.warning(f"Geocode errors for {loc_errors} locations.")
+    logger.info(f"Cache hits: {cache_hits}")
 
     db = get_weather(db)
     if not db:
-        print("Error while getting weather", file=sys.stderr)
+        logger.exception("Error while getting weather")
         sys.exit(1)
 
     db = side_of_town(db)
     if not db:
-        print("Error while getting side of town", file=sys.stderr)
+        logger.exception("Error while getting side of town")
         sys.exit(1)
 
     output(db)
