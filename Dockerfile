@@ -6,8 +6,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source code (in the src directory)
-COPY src/ .
+# Copy source code as a package
+COPY src/ src/
 
 # Default command to run the application
-CMD ["python", "src/main.py"]
+CMD ["python", "-m", "src.pipeline.main"]

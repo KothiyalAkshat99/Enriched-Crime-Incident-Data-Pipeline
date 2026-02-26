@@ -8,7 +8,7 @@ A data pipeline that fetches Norman Police Department daily incident PDFs, extra
 
 ## What it does
 
-- **Fetch:** Reads PDF URLs from a CSV file and downloads each PDF in memory.
+- **Fetch:** Scrapes the Norman PD reports page for incident PDF URLs (or uses a CSV list) and downloads each PDF in memory.
 - **Extract:** Parses incident tables from PDFs (datetime, incident number, location, nature, incident ORI) using PyMuPDF.
 - **Store:** Writes to SQLite (`resources/normanpd.db`) with an extended schema: day of week, time of day, location/incident ranks, EMSSTAT, etc.
 - **Augment:** Geocodes locations (Nominatim, cached in DB), fetches historical weather (Open-Meteo), and computes “side of town” (compass direction from Norman center).
@@ -43,17 +43,16 @@ pipenv install
 
 ## Run
 
-Provide a CSV file with one PDF URL per line (no header required):
+Recommended (modular pipeline orchestrator):
 
 ```bash
-python main.py --urls files.csv
+python -m src.pipeline.main
 ```
 
-Example `files.csv`:
+Legacy (CSV list, older monolithic runner):
 
-```
-https://www.normanok.gov/sites/default/files/documents/2024-04/2024-04-01_daily_incident_summary.pdf
-https://www.normanok.gov/sites/default/files/documents/2024-04/2024-04-02_daily_incident_summary.pdf
+```bash
+python -m src.main_monolithic --urls files.csv
 ```
 
 The database is created at `resources/normanpd.db`; the `resources/` folder is created automatically if it does not exist.
@@ -76,13 +75,14 @@ Tests cover fetch, extract, DB create/populate, rank updates, geocoding, weather
 
 | Path | Purpose |
 |------|--------|
-| `main.py` | Main pipeline script |
+| `src/pipeline/main.py` | Modular pipeline orchestrator |
+| `src/` | Modular components (scrape/pdf/db/enrich) |
+| `src/main_monolithic.py` | Legacy all-in-one script (reference/tests) |
 | `files.csv` | Example list of incident PDF URLs |
 | `requirements.txt` | Pip-installable dependencies |
 | `Pipfile` | Pipenv dependencies (optional) |
 | `setup.py` | Package metadata and pytest hook |
 | `tests/test_main.py` | Pytest tests |
-| `PLANNER.md` | Roadmap and future work (see below) |
 
 ---
 

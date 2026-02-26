@@ -4,14 +4,10 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
-      - ./src:/app/src
       - ./resources:/app/resources
-    command: python main.py
-    #ports:
-    #  - 8000:8000
+      - ./.cache:/app/.cache
+    command: python -m src.pipeline.main
+    env_file:
+      - .env
     environment:
       - LOG_LEVEL=INFO
-      - .env
-  
-  volumes:
-    - ./.cache:/app/.cache

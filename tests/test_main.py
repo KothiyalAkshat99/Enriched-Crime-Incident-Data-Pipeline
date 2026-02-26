@@ -1,5 +1,5 @@
 import pytest
-import src.main as pkg_main
+import src.main_monolithic as pkg_main
 import sys
 import warnings
 
