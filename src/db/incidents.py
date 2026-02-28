@@ -5,7 +5,7 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-def populate_incidents(db: connection, incidents: list[list[list[str]]]) -> None:
+def populate_incidents(db: connection, incidents: list[list[list[str]]]) -> int:
     """Populate the database with the incidents."""
     try:
 
@@ -42,10 +42,12 @@ def populate_incidents(db: connection, incidents: list[list[list[str]]]) -> None
                    ON CONFLICT (incident_num) DO NOTHING""",
                 temp,
             )
+            inserted_incidents = cur.rowcount
 
             # When multiple incidents with same time and location have different emsstat values, set emsstat to 1 for all of them
             cur.execute("UPDATE incidents SET emsstat = 1 WHERE incident_num in (SELECT i2.incident_num FROM incidents i1 JOIN incidents i2 ON i1.datetime = i2.datetime WHERE (i1.emsstat = 1 AND i2.emsstat = 0) AND i1.location = i2.location AND i1.incident_num <> i2.incident_num);")
         db.commit()
+        return inserted_incidents
 
     except Exception as e:
         logger.exception(f"Error populating database: {e}")

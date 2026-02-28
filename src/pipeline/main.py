@@ -70,11 +70,15 @@ def run() -> None:
         )
         
         # Fetch, parse, and load incidents
+        inserted_incidents = 0
         for url in incident_urls:
             logger.info("Fetching incidents from %s", url)
             incident_pdf = fetchincidents(url)
             incidents = extract_incidents(incident_pdf)
-            populate_incidents(conn, incidents)
+            inserted_incidents_this_url = populate_incidents(conn, incidents)
+            logger.info(f"Inserted {inserted_incidents_this_url} incidents from {url} into the database")
+            inserted_incidents += inserted_incidents_this_url
+        logger.info(f"Inserted {inserted_incidents} incidents into the database")
 
         # Post-processing
         update_ranks_incidents(conn)
