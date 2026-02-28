@@ -63,7 +63,7 @@ def run() -> None:
         create_location_table(conn)
 
         # Scrape the Norman PD activity reports page
-        incident_urls, case_urls, arrest_urls = scrape_normanpd_pdf_urls()
+        incident_urls, case_urls, arrest_urls = scrape_normanpd_pdf_urls(conn)
         logger.info(
             "Processing %d incident PDFs (cases/arrests not yet handled)",
             len(incident_urls),
@@ -83,7 +83,7 @@ def run() -> None:
         side_of_town(conn)
 
         # Final output
-        _output_incidents(conn)
+        #_output_incidents(conn)
     finally:
         terminate_connection(conn)
 

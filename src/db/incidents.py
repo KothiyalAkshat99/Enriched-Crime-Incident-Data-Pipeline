@@ -1,6 +1,7 @@
 from psycopg2.extensions import connection
 import logging
 from src.pdf.parse_incidents import get_day_of_week
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -29,11 +30,14 @@ def populate_incidents(db: connection, incidents: list[list[list[str]]]) -> None
         #incident_num INT, datetime TEXT, day_of_week int, time_of_day int, weather int, location TEXT, location_rank int, side_of_town TEXT, incident_rank int, nature TEXT, emsstat int
         for i in range(len(dttime)): # Total pages in the PDF
             for j in range(len(dttime[i])): # Entries per page
-                temp.append((inc_no[i][j], dttime[i][j], days_of_week[i][j], hours_of_day[i][j], loc[i][j], nature[i][j], emsstat[i][j]))
+                dt_str = dttime[i][j]  # e.g. "1/2/2026 0:03"
+                incident_ts = datetime.strptime(dt_str, '%m/%d/%Y %H:%M')
+                temp.append((inc_no[i][j], incident_ts, days_of_week[i][j], hours_of_day[i][j], loc[i][j], nature[i][j], emsstat[i][j]))
+        
         with db.cursor() as cur:
             # Data insertion (ON CONFLICT for idempotent runs)
             cur.executemany(
-                """INSERT INTO incidents(incident_num, datetime, day_of_week, time_of_day, location, nature, emsstat)
+                """INSERT INTO incidents(incident_num, incident_ts, day_of_week, time_of_day, location, nature, emsstat)
                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                    ON CONFLICT (incident_num) DO NOTHING""",
                 temp,

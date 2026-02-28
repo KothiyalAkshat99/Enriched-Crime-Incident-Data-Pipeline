@@ -5,11 +5,11 @@ import re
 import logging
 from datetime import datetime
 
-from src.db.connection import create_connection
+from psycopg2.extensions import connection
 
 logger = logging.getLogger(__name__)
 
-def scrape_normanpd_pdf_urls() -> tuple[list[str], list[str], list[str]]:
+def scrape_normanpd_pdf_urls(db: connection) -> tuple[list[str], list[str], list[str]]:
     """Scrape Norman PD PDF URLs from the department activity reports page."""
     
     url = "https://www.normanok.gov/public-safety/police-department/crime-prevention-data/department-activity-reports"
@@ -18,16 +18,13 @@ def scrape_normanpd_pdf_urls() -> tuple[list[str], list[str], list[str]]:
     incident_pdf_urls = set()
     case_pdf_urls = set()
     arrest_pdf_urls = set()
-
-    db = create_connection()
     
     # Check if the database has the latest PDF URLs
     with db.cursor() as cur:
-        cur.execute("SELECT datetime FROM incidents ORDER BY datetime DESC LIMIT 1")
+        cur.execute("SELECT MAX(incident_ts)::date FROM incidents")
         latest_datetime = cur.fetchone()
     
-    latest_datetime_in_db = latest_datetime[0] if latest_datetime else None
-    latest_date_in_db = datetime.strptime(latest_datetime_in_db, '%m/%d/%Y').date() if latest_datetime_in_db else None
+    latest_date_in_db = latest_datetime[0] if latest_datetime else None
     
     if response.status_code == 200:
         soup = BeautifulSoup(response.text, 'html.parser')

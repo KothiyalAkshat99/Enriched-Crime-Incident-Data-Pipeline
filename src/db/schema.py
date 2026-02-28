@@ -10,7 +10,7 @@ def create_incident_table(conn: connection) -> None:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS incidents (
                 incident_num TEXT PRIMARY KEY,
-                datetime TEXT,
+                incident_ts TIMESTAMP,
                 day_of_week INTEGER,
                 time_of_day INTEGER,
                 weather INTEGER,

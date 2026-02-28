@@ -18,10 +18,10 @@ def get_weather(db: connection) -> None:
         cur.execute("SELECT DISTINCT datetime, location, latitude, longitude FROM incidents JOIN location ON incidents.location = location.loc")
         locations = cur.fetchall()
 
-    for datetime_str, location, latitude, longitude in locations:
+    for incident_ts, location, latitude, longitude in locations:
 
-        date = datetime.strptime(datetime_str, '%m/%d/%Y %H:%M').strftime('%Y-%m-%d')
-        hour = datetime.strptime(datetime_str, '%m/%d/%Y %H:%M').hour
+        date = incident_ts.date() if hasattr(incident_ts, 'date') else incident_ts
+        hour = incident_ts.hour if hasattr(incident_ts, 'hour') else int(incident_ts.strftime('%H'))
 
         if latitude is None or longitude is None:
             logger.warning(f"Latitude or longitude is None for {location} on {date} at hour {hour}")
@@ -43,7 +43,7 @@ def get_weather(db: connection) -> None:
             if hour < len(hourly_weather_code):
                 weather_code = int(hourly_weather_code[hour])
                 with db.cursor() as cur:
-                    cur.execute("UPDATE incidents SET weather = %s WHERE datetime = %s AND location = %s", (weather_code, datetime_str, location))
+                    cur.execute("UPDATE incidents SET weather = %s WHERE incident_ts = %s AND location = %s", (weather_code, incident_ts, location))
             else:
                 logger.warning(f"No weather data found for {location} on {date} at hour {hour}")
                 continue
