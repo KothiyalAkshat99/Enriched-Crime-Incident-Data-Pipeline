@@ -3,10 +3,34 @@ from geopy.geocoders import Nominatim
 import geopy.extra.rate_limiter as rl
 from psycopg2.extensions import connection
 
-geolocator = Nominatim(user_agent="normanpd")
+# Nominatim can be slow or rate-limited; use a longer timeout to avoid ReadTimeoutError (geopy default is 1s)
+GEOCODE_TIMEOUT = 10
+geolocator = Nominatim(user_agent="normanpd-incident-pipeline-geocoder", timeout=GEOCODE_TIMEOUT)
 rate_limiter = rl.RateLimiter(geolocator.geocode, min_delay_seconds=1)
 
+# For intersection-style addresses (e.g. "VINE ST / S BERRY RD"), geocoding each side with locality often works
+LOCALITY_SUFFIX = ", Norman, OK, USA"
+INTERSECTION_SEP = " / "
+
 logger = logging.getLogger(__name__)
+
+
+def _geocode_with_intersection_fallback(address: str):
+    """Try full address, then each side of ' / ' with locality if that fails."""
+    loc = rate_limiter(address)
+    if loc:
+        return loc
+    if INTERSECTION_SEP not in address:
+        return None
+    parts = [p.strip() for p in address.split(INTERSECTION_SEP, 1) if p.strip()]
+    for part in parts:
+        query = part + LOCALITY_SUFFIX
+        loc = rate_limiter(query)
+        if loc:
+            logger.debug("Geocoded intersection '%s' via part '%s'", address, part)
+            return loc
+    return None
+
 
 def cache_geocode(address: str, db: connection) -> None:
     """Cache the latitude and longitude for a given address in the database."""
@@ -18,7 +42,7 @@ def cache_geocode(address: str, db: connection) -> None:
             if result:
                 logger.debug("Cache hit for %s", address)
                 return
-            loc = rate_limiter(address)
+            loc = _geocode_with_intersection_fallback(address)
             if loc:
                 latitude = loc.latitude
                 longitude = loc.longitude

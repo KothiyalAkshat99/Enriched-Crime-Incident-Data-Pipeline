@@ -5,9 +5,25 @@ import requests_cache
 from retry_requests import retry
 from psycopg2.extensions import connection
 
-_cache_session = requests_cache.CachedSession('.cache', expire_after = -1)
-_retry_session = retry(_cache_session, retries = 5, backoff_factor = 0.2)
-_openmeteo_client = openmeteo_requests.Client(session = _retry_session)
+# Open-Meteo archive API can be slow; use a longer timeout to avoid ReadTimeoutError (requests default is no timeout)
+OPENMETEO_TIMEOUT = 10
+
+
+class CachedSessionWithTimeout(requests_cache.CachedSession):
+    """CachedSession that applies a default timeout to every request."""
+
+    def __init__(self, *args, timeout=OPENMETEO_TIMEOUT, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._default_timeout = timeout
+
+    def request(self, *args, **kwargs):
+        kwargs.setdefault("timeout", self._default_timeout)
+        return super().request(*args, **kwargs)
+
+
+_cache_session = CachedSessionWithTimeout(".cache", expire_after=-1)
+_retry_session = retry(_cache_session, retries=5, backoff_factor=0.2)
+_openmeteo_client = openmeteo_requests.Client(session=_retry_session)
 
 logger = logging.getLogger(__name__)
 
