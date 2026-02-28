@@ -1,6 +1,6 @@
 # Norman PD Incident Data Pipeline
 
-A data pipeline that fetches Norman Police Department daily incident PDFs, extracts structured data, and augments it with geocoding and weather.
+A data pipeline that fetches Norman Police Department daily incident PDFs, extracts structured data, and augments it with geocoding and weather. Supports incremental runs and PostgreSQL.
 
 **Author:** Akshat Kothiyal
 
@@ -8,88 +8,86 @@ A data pipeline that fetches Norman Police Department daily incident PDFs, extra
 
 ## What it does
 
-- **Fetch:** Scrapes the Norman PD reports page for incident PDF URLs (or uses a CSV list) and downloads each PDF in memory.
-- **Extract:** Parses incident tables from PDFs (datetime, incident number, location, nature, incident ORI) using PyMuPDF.
-- **Store:** Writes to SQLite (`resources/normanpd.db`) with an extended schema: day of week, time of day, location/incident ranks, EMSSTAT, etc.
+- **Fetch:** Scrapes the Norman PD reports page for incident PDF URLs and downloads each PDF in memory.
+- **Extract:** Parses incident tables from PDFs (datetime, incident number, location, nature, ORI) using PyMuPDF.
+- **Store:** Writes to **PostgreSQL** with an enriched schema. Re-runs skip duplicates and only process new reports (by latest date in the DB).
 - **Augment:** Geocodes locations (Nominatim, cached in DB), fetches historical weather (Open-Meteo), and computes “side of town” (compass direction from Norman center).
-- **Output:** Prints the augmented dataset to stdout (tab-separated).
+- **Output:** Prints the augmented dataset to stdout. Optional CSV export via `python -m src.pipeline.temp`.
 
-The pipeline processes **all URLs** in the given CSV, creates the `resources/` directory if missing, and skips weather/side-of-town for locations where geocoding failed (NULL lat/lon).
+For implementation details, schema, and technical decisions, see **TECHNICAL.md**.
 
 ---
 
 ## Prerequisites
 
-- **Python 3.8+** (tested on 3.12)
-- Optional: [Pipenv](https://pipenv.pypa.io/) for environment management
+- Python 3.10+
+- PostgreSQL (local or Docker)
 
 ---
 
 ## Install
 
-**Option A — pip (recommended for new repo / CI):**
-
 ```bash
 pip install -r requirements.txt
 ```
 
-**Option B — Pipenv:**
+---
 
-```bash
-pipenv install
+## Configuration
+
+Create a `.env` file with at least:
+
+```env
+DATABASE_URL=postgresql://user:password@host:5432/normanpd
 ```
+
+Optional: `LOG_LEVEL`, `LOG_FILE`, `TOWN_CENTER`. For Docker Compose, also set `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT`, `POSTGRES_HOST=db`.
 
 ---
 
 ## Run
 
-Recommended (modular pipeline orchestrator):
+**Pipeline (Postgres):**
 
 ```bash
 python -m src.pipeline.main
 ```
 
-Legacy (CSV list, older monolithic runner):
+**With Docker (pipeline + Postgres):**
 
 ```bash
-python -m src.main_monolithic --urls files.csv
+docker compose up --build
 ```
 
-The database is created at `resources/normanpd.db`; the `resources/` folder is created automatically if it does not exist.
+**CSV export:**
+
+```bash
+python -m src.pipeline.temp
+```
+
+**Legacy (monolithic, SQLite):** `python -m src.main_monolithic --urls files.csv` — uses `resources/normanpd.db`.
 
 ---
 
 ## Testing
 
 ```bash
-pipenv run python -m pytest
-# or
-python -m pytest
+python -m pytest tests/test_pipeline_minimal.py -v
 ```
 
-Tests cover fetch, extract, DB create/populate, rank updates, geocoding, weather, side-of-town, and output. Geocoding and weather tests may hit live APIs or use cached data.
+Minimal suite: no DB or network; needs pytest and PyMuPDF. Legacy tests: `python -m pytest tests/test_main.py -v` (monolithic + SQLite).
 
 ---
 
 ## Project layout
 
 | Path | Purpose |
-|------|--------|
-| `src/pipeline/main.py` | Modular pipeline orchestrator |
-| `src/` | Modular components (scrape/pdf/db/enrich) |
-| `src/main_monolithic.py` | Legacy all-in-one script (reference/tests) |
-| `files.csv` | Example list of incident PDF URLs |
-| `requirements.txt` | Pip-installable dependencies |
-| `Pipfile` | Pipenv dependencies (optional) |
-| `setup.py` | Package metadata and pytest hook |
-| `tests/test_main.py` | Pytest tests |
-
----
-
-## Configuration and environment
-
-- **Database path:** `resources/normanpd.db`.
-- **Town center** (for “side of town”): Norman, OK `(35.2226, -97.4395)`.
-- **Geocoding:** Nominatim (no API key). Optional `.env` can be used for future OpenCage or other keys.
-
----
+|------|---------|
+| `src/pipeline/` | Orchestrator and CSV export |
+| `src/scrape/` | PDF URL scraping |
+| `src/pdf/` | Fetch and parse PDFs |
+| `src/db/` | Postgres connection, schema, incidents, location cache |
+| `src/enrich/` | Weather and side-of-town |
+| `tests/test_pipeline_minimal.py` | Minimal tests |
+| `tests/test_main.py` | Legacy (monolithic) tests |
+| `TECHNICAL.md` | Schema, data flow, and technical decisions |
