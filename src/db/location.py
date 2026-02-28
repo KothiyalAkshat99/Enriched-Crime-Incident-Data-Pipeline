@@ -16,7 +16,7 @@ def cache_geocode(address: str, db: connection) -> None:
             result = con.fetchone()
 
             if result:
-                logger.info(f"Cache hit for {address}")
+                logger.debug("Cache hit for %s", address)
                 return
             loc = rate_limiter(address)
             if loc:
@@ -27,23 +27,22 @@ def cache_geocode(address: str, db: connection) -> None:
                     (address, latitude, longitude),
                 )
                 db.commit()
-                logger.info(f"Location {address} cached for {latitude}, {longitude}")
+                logger.info("Location %s cached: lat=%s lon=%s", address, latitude, longitude)
             else:
-                logger.warning(f"No location found for {address}")
+                logger.warning("No location found for %s", address)
     except Exception as e:
-        logger.exception(f"Error in geocoding {address}: {e}")
+        logger.exception("Error in geocoding %s: %s", address, e)
 
 def get_location(db: connection) -> connection:
     """Get the latitude and longitude for the locations in the database."""
-    logger.info("Fetching latitude and longitude for locations")
     try:
         with db.cursor() as cur:
             cur.execute("SELECT DISTINCT location FROM incidents")
             addresses = [row[0] for row in cur.fetchall()]
-
+        logger.info("Geocoding %d distinct incident locations", len(addresses))
         for address in addresses:
             cache_geocode(address, db)
     except Exception as e:
-        logger.exception(f"Error in getting location: {e}")
+        logger.exception("Error in getting location: %s", e)
         raise Exception(f"Error in getting location: {e}") from e
     return db

@@ -23,9 +23,11 @@ def create_incident_table(conn: connection) -> None:
             )
         """)
         cur.execute("CREATE INDEX IF NOT EXISTS idx_incidents_incident_num ON incidents (incident_num)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_incidents_incident_ts ON incidents (incident_ts)")
         conn.commit()
+        logger.debug("Incidents table ready")
     except Exception as e:
-        logger.exception(f"Error creating incident table: {e}")
+        logger.exception("Error creating incident table: %s", e)
         raise Exception(f"Error creating incident table: {e}") from e
 
 def create_location_table(conn: connection) -> None:
@@ -41,6 +43,7 @@ def create_location_table(conn: connection) -> None:
             )
         """)
         conn.commit()
+        logger.debug("Location table ready")
     except Exception as e:
-        logger.exception(f"Error creating location table: {e}")
+        logger.exception("Error creating location table: %s", e)
         raise Exception(f"Error creating location table: {e}") from e

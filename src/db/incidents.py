@@ -45,13 +45,20 @@ def populate_incidents(db: connection, incidents: list[list[list[str]]]) -> int:
             inserted_incidents = cur.rowcount
 
             # When multiple incidents with same time and location have different emsstat values, set emsstat to 1 for all of them
-            cur.execute("UPDATE incidents SET emsstat = 1 WHERE incident_num in (SELECT i2.incident_num FROM incidents i1 JOIN incidents i2 ON i1.datetime = i2.datetime WHERE (i1.emsstat = 1 AND i2.emsstat = 0) AND i1.location = i2.location AND i1.incident_num <> i2.incident_num);")
+            cur.execute("""
+                UPDATE incidents SET emsstat = 1
+                WHERE incident_num IN (
+                    SELECT i2.incident_num FROM incidents i1
+                    JOIN incidents i2 ON i1.incident_ts = i2.incident_ts AND i1.location = i2.location AND i1.incident_num <> i2.incident_num
+                    WHERE i1.emsstat = 1 AND i2.emsstat = 0
+                )
+            """)
         db.commit()
         return inserted_incidents
 
     except Exception as e:
-        logger.exception(f"Error populating database: {e}")
-        raise Exception(f"Error populating database: {e}")
+        logger.exception("Error populating database: %s", e)
+        raise Exception(f"Error populating database: {e}") from e
 
 
 def update_ranks_incidents(db: connection) -> None:
@@ -63,5 +70,5 @@ def update_ranks_incidents(db: connection) -> None:
             cur.execute("WITH NatureFrequency AS (SELECT nature, RANK() OVER (ORDER BY COUNT(*) DESC) AS Rank FROM incidents GROUP BY nature) UPDATE incidents SET incident_rank = NatureFrequency.Rank FROM NatureFrequency WHERE incidents.nature = NatureFrequency.nature;")
         db.commit()
     except Exception as e:
-        logger.exception(f"Error updating ranks: {e}")
-        raise Exception(f"Error updating ranks: {e}")
+        logger.exception("Error updating ranks: %s", e)
+        raise Exception(f"Error updating ranks: {e}") from e

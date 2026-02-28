@@ -15,8 +15,9 @@ def create_connection() -> connection:
         raise Exception("DATABASE_URL is not set")
     try:
         conn = psycopg2.connect(DATABASE_URL)
+        logger.debug("Database connection established")
     except psycopg2.Error as e:
-        logger.exception(f"Error creating database connection: {e}")
+        logger.exception("Error creating database connection: %s", e)
         raise Exception(f"Error creating database connection: {e}")
     return conn
 
@@ -25,5 +26,5 @@ def terminate_connection(conn: connection) -> None:
     try:
         conn.close()
     except psycopg2.Error as e:
-        logger.exception(f"Error terminating database connection: {e}")
+        logger.exception("Error terminating database connection: %s", e)
         raise Exception(f"Error terminating database connection: {e}")

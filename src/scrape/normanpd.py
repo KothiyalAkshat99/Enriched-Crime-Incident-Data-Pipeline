@@ -43,7 +43,7 @@ def scrape_normanpd_pdf_urls(db: connection) -> tuple[list[str], list[str], list
                 if not latest_date_in_db or report_date > latest_date_in_db:
                     incident_pdf_urls.add(urljoin(base_url, href))
                 else:
-                    logger.info(f"Skipping {href} because it is before {latest_date_in_db}")
+                    logger.info("Skipping %s (report date before %s)", href, latest_date_in_db)
             
             if re.search(daily_case_pattern, href):
                 report_date = re.search(r'\d{4}-\d{2}-\d{2}', href).group(0)
@@ -51,7 +51,7 @@ def scrape_normanpd_pdf_urls(db: connection) -> tuple[list[str], list[str], list
                 if not latest_date_in_db or report_date > latest_date_in_db:
                     case_pdf_urls.add(urljoin(base_url, href))
                 else:
-                    logger.info(f"Skipping {href} because it is before {latest_date_in_db}")
+                    logger.info("Skipping %s (report date before %s)", href, latest_date_in_db)
             
             if re.search(daily_arrest_pattern, href):
                 report_date = re.search(r'\d{4}-\d{2}-\d{2}', href).group(0)
@@ -59,13 +59,11 @@ def scrape_normanpd_pdf_urls(db: connection) -> tuple[list[str], list[str], list
                 if not latest_date_in_db or report_date > latest_date_in_db:
                     arrest_pdf_urls.add(urljoin(base_url, href))
                 else:
-                    logger.info(f"Skipping {href} because it is before {latest_date_in_db}")
+                    logger.info("Skipping %s (report date before %s)", href, latest_date_in_db)
     else:
-        logger.exception(f"Error while scraping Norman PD PDF URLs: {response.status_code}")
+        logger.exception("Error while scraping Norman PD PDF URLs: status %s", response.status_code)
         raise Exception(f"Error while scraping Norman PD PDF URLs: {response.status_code}")
 
-    logger.info(f"Found {len(incident_pdf_urls)} incident PDF URLs")
-    logger.info(f"Found {len(case_pdf_urls)} case PDF URLs")
-    logger.info(f"Found {len(arrest_pdf_urls)} arrest PDF URLs")
+    logger.info("Found %d incident PDF URLs, %d case, %d arrest", len(incident_pdf_urls), len(case_pdf_urls), len(arrest_pdf_urls))
     
     return list(incident_pdf_urls), list(case_pdf_urls), list(arrest_pdf_urls)

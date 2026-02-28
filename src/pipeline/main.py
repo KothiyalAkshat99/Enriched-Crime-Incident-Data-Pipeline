@@ -55,6 +55,7 @@ def run() -> None:
     Output the incidents.
     """
     setup_logging()
+    logger.info("Pipeline run started")
 
     conn = create_connection()
     try:
@@ -68,26 +69,51 @@ def run() -> None:
             "Processing %d incident PDFs (cases/arrests not yet handled)",
             len(incident_urls),
         )
-        
+
         # Fetch, parse, and load incidents
-        inserted_incidents = 0
+        inserted_this_run = 0
         for url in incident_urls:
             logger.info("Fetching incidents from %s", url)
             incident_pdf = fetchincidents(url)
             incidents = extract_incidents(incident_pdf)
-            inserted_incidents_this_url = populate_incidents(conn, incidents)
-            logger.info(f"Inserted {inserted_incidents_this_url} incidents from {url} into the database")
-            inserted_incidents += inserted_incidents_this_url
-        logger.info(f"Inserted {inserted_incidents} incidents into the database")
+            extracted_count = sum(len(page) for page in incidents[0])
+            inserted_this_url = populate_incidents(conn, incidents)
+            inserted_this_run += inserted_this_url
+            logger.info(
+                "URL %s: extracted %d, inserted %d",
+                url,
+                extracted_count,
+                inserted_this_url,
+            )
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM incidents")
+            total_in_db = cur.fetchone()[0]
+        logger.info(
+            "Run summary: inserted this run=%d, total rows in incidents=%d",
+            inserted_this_run,
+            total_in_db,
+        )
 
         # Post-processing
+        logger.info("Updating location and incident ranks")
         update_ranks_incidents(conn)
         get_location(conn)
+        logger.info("Fetching weather for incident locations")
         get_weather(conn)
+        logger.info("Computing side of town")
         side_of_town(conn)
 
-        # Final output
-        #_output_incidents(conn)
+        # Enrichment health: log NULL counts
+        with conn.cursor() as cur:
+            for col in ("weather", "location_rank", "side_of_town"):
+                cur.execute(f"SELECT COUNT(*) FROM incidents WHERE {col} IS NULL")
+                n = cur.fetchone()[0]
+                logger.info("Incidents with %s NULL: %d", col, n)
+
+        # Final output (optional)
+        # _output_incidents(conn)
+        logger.info("Pipeline run completed successfully")
     finally:
         terminate_connection(conn)
 

@@ -21,7 +21,7 @@ def side_of_town(db: connection) -> None:
 
     for loc, latitude, longitude in locs:
         if latitude is None or longitude is None:
-            logger.warning(f"Latitude or longitude is None for {loc}")
+            logger.warning("Latitude or longitude is None for %s", loc)
             continue
         point = (latitude, longitude)
         lat1, lon1 = map(radians, town_center)
