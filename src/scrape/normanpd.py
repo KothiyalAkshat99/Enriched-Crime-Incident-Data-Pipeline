@@ -3,6 +3,9 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
 import re
 import logging
+from datetime import datetime
+
+from src.db.connection import create_connection
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +18,16 @@ def scrape_normanpd_pdf_urls() -> tuple[list[str], list[str], list[str]]:
     incident_pdf_urls = set()
     case_pdf_urls = set()
     arrest_pdf_urls = set()
+
+    db = create_connection()
+    
+    # Check if the database has the latest PDF URLs
+    with db.cursor() as cur:
+        cur.execute("SELECT datetime FROM incidents ORDER BY datetime DESC LIMIT 1")
+        latest_datetime = cur.fetchone()
+    
+    latest_datetime_in_db = latest_datetime[0] if latest_datetime else None
+    latest_date_in_db = datetime.strptime(latest_datetime_in_db, '%m/%d/%Y').date() if latest_datetime_in_db else None
     
     if response.status_code == 200:
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -26,12 +39,30 @@ def scrape_normanpd_pdf_urls() -> tuple[list[str], list[str], list[str]]:
         
         for link in soup.find_all('a', href=True):
             href = link.get('href', '').strip()
+            
             if re.search(daily_incident_pattern, href):
-                incident_pdf_urls.add(urljoin(base_url, href))
+                report_date = re.search(r'\d{4}-\d{2}-\d{2}', href).group(0)
+                report_date = datetime.strptime(report_date, '%Y-%m-%d').date()
+                if not latest_date_in_db or report_date > latest_date_in_db:
+                    incident_pdf_urls.add(urljoin(base_url, href))
+                else:
+                    logger.info(f"Skipping {href} because it is before {latest_date_in_db}")
+            
             if re.search(daily_case_pattern, href):
-                case_pdf_urls.add(urljoin(base_url, href))
+                report_date = re.search(r'\d{4}-\d{2}-\d{2}', href).group(0)
+                report_date = datetime.strptime(report_date, '%Y-%m-%d').date()
+                if not latest_date_in_db or report_date > latest_date_in_db:
+                    case_pdf_urls.add(urljoin(base_url, href))
+                else:
+                    logger.info(f"Skipping {href} because it is before {latest_date_in_db}")
+            
             if re.search(daily_arrest_pattern, href):
-                arrest_pdf_urls.add(urljoin(base_url, href))
+                report_date = re.search(r'\d{4}-\d{2}-\d{2}', href).group(0)
+                report_date = datetime.strptime(report_date, '%Y-%m-%d').date()
+                if not latest_date_in_db or report_date > latest_date_in_db:
+                    arrest_pdf_urls.add(urljoin(base_url, href))
+                else:
+                    logger.info(f"Skipping {href} because it is before {latest_date_in_db}")
     else:
         logger.exception(f"Error while scraping Norman PD PDF URLs: {response.status_code}")
         raise Exception(f"Error while scraping Norman PD PDF URLs: {response.status_code}")

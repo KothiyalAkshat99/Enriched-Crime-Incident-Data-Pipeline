@@ -1,24 +1,29 @@
-import sqlite3
 import logging
 import os
+from dotenv import load_dotenv
+import psycopg2
+from psycopg2.extensions import connection
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-def create_connection(db_file: str) -> sqlite3.Connection:
+def create_connection() -> connection:
     """Create a connection to the database."""
-    os.makedirs("resources", exist_ok=True)
-    conn = None
+    DATABASE_URL = os.getenv("DATABASE_URL")
+    if not DATABASE_URL:
+        raise Exception("DATABASE_URL is not set")
     try:
-        conn = sqlite3.connect(db_file)
-    except sqlite3.Error as e:
+        conn = psycopg2.connect(DATABASE_URL)
+    except psycopg2.Error as e:
         logger.exception(f"Error creating database connection: {e}")
         raise Exception(f"Error creating database connection: {e}")
     return conn
 
-def terminate_connection(conn: sqlite3.Connection) -> None:
+def terminate_connection(conn: connection) -> None:
     """Terminate a connection to the database."""
     try:
         conn.close()
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         logger.exception(f"Error terminating database connection: {e}")
         raise Exception(f"Error terminating database connection: {e}")

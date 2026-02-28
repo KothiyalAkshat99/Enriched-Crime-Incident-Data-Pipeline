@@ -2,7 +2,6 @@ import logging
 from typing import Sequence
 
 from src.logging_config import setup_logging
-from src.config import DB_PATH
 from src.scrape.normanpd import scrape_normanpd_pdf_urls
 from src.pdf.fetch_incidents import fetchincidents
 from src.pdf.parse_incidents import extract_incidents
@@ -57,10 +56,7 @@ def run() -> None:
     """
     setup_logging()
 
-    db_path = DB_PATH or "resources/normanpd.db"
-    logger.info("Using database at %s", db_path)
-
-    conn = create_connection(db_path)
+    conn = create_connection()
     try:
         # Ensure schema exists
         create_incident_table(conn)

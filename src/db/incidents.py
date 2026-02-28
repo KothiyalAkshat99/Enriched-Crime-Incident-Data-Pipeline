@@ -1,13 +1,12 @@
-import sqlite3
+from psycopg2.extensions import connection
 import logging
 from src.pdf.parse_incidents import get_day_of_week
 
 logger = logging.getLogger(__name__)
 
-def populate_incidents(db: sqlite3.Connection, incidents: list[list[list[str]]]) -> None:
+def populate_incidents(db: connection, incidents: list[list[list[str]]]) -> None:
     """Populate the database with the incidents."""
     try:
-        cur = db.cursor()
 
         dttime = incidents[0]
         inc_no = incidents[1]
@@ -31,13 +30,17 @@ def populate_incidents(db: sqlite3.Connection, incidents: list[list[list[str]]])
         for i in range(len(dttime)): # Total pages in the PDF
             for j in range(len(dttime[i])): # Entries per page
                 temp.append((inc_no[i][j], dttime[i][j], days_of_week[i][j], hours_of_day[i][j], loc[i][j], nature[i][j], emsstat[i][j]))
+        with db.cursor() as cur:
+            # Data insertion (ON CONFLICT for idempotent runs)
+            cur.executemany(
+                """INSERT INTO incidents(incident_num, datetime, day_of_week, time_of_day, location, nature, emsstat)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)
+                   ON CONFLICT (incident_num) DO NOTHING""",
+                temp,
+            )
 
-        # Data insertion
-        cur.executemany("INSERT INTO incidents(incident_num, datetime, day_of_week, time_of_day, location, nature, emsstat) VALUES (?, ?, ?, ?, ?, ?, ?)", temp)
-        db.commit() # Committing to save changes to DB
-
-        # When multiple incidents with same time and location have different emsstat values, set emsstat to 1 for all of them
-        cur.execute("UPDATE incidents SET emsstat = 1 WHERE incident_num in (SELECT i2.incident_num FROM incidents i1 JOIN incidents i2 ON i1.datetime = i2.datetime WHERE (i1.emsstat = 1 AND i2.emsstat = 0) AND i1.location = i2.location AND i1.incident_num <> i2.incident_num);")
+            # When multiple incidents with same time and location have different emsstat values, set emsstat to 1 for all of them
+            cur.execute("UPDATE incidents SET emsstat = 1 WHERE incident_num in (SELECT i2.incident_num FROM incidents i1 JOIN incidents i2 ON i1.datetime = i2.datetime WHERE (i1.emsstat = 1 AND i2.emsstat = 0) AND i1.location = i2.location AND i1.incident_num <> i2.incident_num);")
         db.commit()
 
     except Exception as e:
@@ -45,16 +48,13 @@ def populate_incidents(db: sqlite3.Connection, incidents: list[list[list[str]]])
         raise Exception(f"Error populating database: {e}")
 
 
-def update_ranks_incidents(db: sqlite3.Connection) -> None:
+def update_ranks_incidents(db: connection) -> None:
     """Update the ranks of the incidents."""
     try:
-        cur = db.cursor()
-
-        # Updating location_rank and incident_rank
-        cur.execute("WITH LocationFrequency AS (SELECT location, RANK() OVER (ORDER BY COUNT(*) DESC) AS Rank FROM incidents GROUP BY location) UPDATE incidents SET location_rank = LocationFrequency.Rank FROM LocationFrequency WHERE incidents.location = LocationFrequency.location;")
-        
-        cur.execute("WITH NatureFrequency AS (SELECT nature, RANK() OVER (ORDER BY COUNT(*) DESC) AS Rank FROM incidents GROUP BY nature) UPDATE incidents SET incident_rank = NatureFrequency.Rank FROM NatureFrequency WHERE incidents.nature = NatureFrequency.nature;")
-
+        with db.cursor() as cur:
+            # Updating location_rank and incident_rank
+            cur.execute("WITH LocationFrequency AS (SELECT location, RANK() OVER (ORDER BY COUNT(*) DESC) AS Rank FROM incidents GROUP BY location) UPDATE incidents SET location_rank = LocationFrequency.Rank FROM LocationFrequency WHERE incidents.location = LocationFrequency.location;")
+            cur.execute("WITH NatureFrequency AS (SELECT nature, RANK() OVER (ORDER BY COUNT(*) DESC) AS Rank FROM incidents GROUP BY nature) UPDATE incidents SET incident_rank = NatureFrequency.Rank FROM NatureFrequency WHERE incidents.nature = NatureFrequency.nature;")
         db.commit()
     except Exception as e:
         logger.exception(f"Error updating ranks: {e}")
